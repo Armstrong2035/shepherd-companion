@@ -1,159 +1,128 @@
+// app/login/page.js
 "use client";
 import { useState } from "react";
+import { useRouter } from "next/navigation";
+import {
+  loginWithEmail,
+  loginWithGoogle,
+  formatAuthError,
+} from "../../firebase/auth";
 import {
   Box,
   Button,
   TextField,
   Typography,
-  Paper,
-  Container,
-  CircularProgress,
   Alert,
-  Link as MuiLink,
-  InputAdornment,
-  IconButton,
-  Divider,
+  CircularProgress,
 } from "@mui/material";
-import { Visibility, VisibilityOff, Google } from "@mui/icons-material";
-import Link from "next/link";
-import { useAuth } from "@/context/AuthContext";
-import Image from "next/image";
-import ProtectedRoute from "../components/auth/ProtectedRoute";
 
-export default function LoginPage() {
+export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
+  const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const { login, loginWithGoogle, authError, clearError } = useAuth();
+  const router = useRouter();
 
-  const handleSubmit = async (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
-    if (!email || !password) return;
-
+    setError("");
     setLoading(true);
-    const success = await login(email, password);
-    setLoading(false);
+
+    try {
+      await loginWithEmail(email, password);
+      router.push("/dashboard");
+    } catch (error) {
+      setError(formatAuthError(error.code) || error.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleGoogleLogin = async () => {
+    setError("");
     setLoading(true);
-    const success = await loginWithGoogle();
-    setLoading(false);
+
+    try {
+      await loginWithGoogle();
+      router.push("/dashboard");
+    } catch (error) {
+      setError(formatAuthError(error.code) || error.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
-    <ProtectedRoute>
-      <Container maxWidth="sm">
-        <Paper
-          elevation={3}
-          sx={{
-            mt: 8,
-            p: 4,
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-          }}
-        >
-          <Box sx={{ mb: 3, textAlign: "center" }}>
-            {/* Replace with your actual logo */}
-            <Typography
-              variant="h4"
-              component="h1"
-              gutterBottom
-              color="primary"
-            >
-              Shepherd CRM
-            </Typography>
-            <Typography variant="h5" component="h1" gutterBottom>
-              Companion App
-            </Typography>
-          </Box>
+    <Box
+      component="form"
+      onSubmit={handleLogin}
+      sx={{ maxWidth: 400, mx: "auto", mt: 8, p: 3 }}
+    >
+      <Typography variant="h4" component="h1" gutterBottom align="center">
+        Shepherd CRM
+      </Typography>
+      <Typography variant="h5" component="h2" gutterBottom align="center">
+        Companion App
+      </Typography>
 
-          {authError && (
-            <Alert
-              severity="error"
-              sx={{ width: "100%", mb: 2 }}
-              onClose={clearError}
-            >
-              {authError}
-            </Alert>
-          )}
+      {error && (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          {error}
+        </Alert>
+      )}
 
-          <form onSubmit={handleSubmit} style={{ width: "100%" }}>
-            <TextField
-              margin="normal"
-              required
-              fullWidth
-              id="email"
-              label="Email Address"
-              name="email"
-              autoComplete="email"
-              autoFocus
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              disabled={loading}
-            />
-            <TextField
-              margin="normal"
-              required
-              fullWidth
-              name="password"
-              label="Password"
-              type={showPassword ? "text" : "password"}
-              id="password"
-              autoComplete="current-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              disabled={loading}
-              InputProps={{
-                endAdornment: (
-                  <InputAdornment position="end">
-                    <IconButton
-                      aria-label="toggle password visibility"
-                      onClick={() => setShowPassword(!showPassword)}
-                      edge="end"
-                    >
-                      {showPassword ? <VisibilityOff /> : <Visibility />}
-                    </IconButton>
-                  </InputAdornment>
-                ),
-              }}
-            />
-            <Button
-              type="submit"
-              fullWidth
-              variant="contained"
-              sx={{ mt: 3, mb: 2, py: 1.5 }}
-              disabled={loading}
-            >
-              {loading ? <CircularProgress size={24} /> : "Sign In"}
-            </Button>
-          </form>
+      <TextField
+        margin="normal"
+        required
+        fullWidth
+        label="Email Address"
+        value={email}
+        onChange={(e) => setEmail(e.target.value)}
+        disabled={loading}
+      />
+      <TextField
+        margin="normal"
+        required
+        fullWidth
+        label="Password"
+        type="password"
+        value={password}
+        onChange={(e) => setPassword(e.target.value)}
+        disabled={loading}
+      />
 
-          <Divider sx={{ width: "100%", my: 2 }}>OR</Divider>
+      <Button
+        type="submit"
+        fullWidth
+        variant="contained"
+        sx={{ mt: 3, mb: 2 }}
+        disabled={loading}
+      >
+        {loading ? <CircularProgress size={24} /> : "Sign In"}
+      </Button>
 
+      <Button
+        fullWidth
+        variant="outlined"
+        onClick={handleGoogleLogin}
+        disabled={loading}
+      >
+        Sign in with Google
+      </Button>
+
+      <Box mt={2} textAlign="center">
+        <Typography variant="body2">
+          Don't have an account?{" "}
           <Button
-            fullWidth
-            variant="outlined"
-            startIcon={<Google />}
-            onClick={handleGoogleLogin}
-            disabled={loading}
-            sx={{ mb: 2, py: 1.5 }}
+            component="a"
+            href="/register"
+            color="primary"
+            sx={{ fontWeight: "normal", p: 0, textTransform: "none" }}
           >
-            Sign in with Google
+            Register here
           </Button>
-
-          <Box sx={{ mt: 2, textAlign: "center" }}>
-            <Typography variant="body2">
-              Don't have an account yet?{" "}
-              <Link href="/register" passHref>
-                <MuiLink component="span">Register here</MuiLink>
-              </Link>
-            </Typography>
-          </Box>
-        </Paper>
-      </Container>
-    </ProtectedRoute>
+        </Typography>
+      </Box>
+    </Box>
   );
 }

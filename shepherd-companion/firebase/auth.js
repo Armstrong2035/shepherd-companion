@@ -1,142 +1,159 @@
-// firebase/auth-simplified.js
+// lib/auth.js
 import {
-  signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
-  signOut as firebaseSignOut,
-  GoogleAuthProvider,
+  signInWithEmailAndPassword,
   signInWithPopup,
+  GoogleAuthProvider,
+  signOut as firebaseSignOut,
 } from "firebase/auth";
-import { doc, setDoc, serverTimestamp } from "firebase/firestore";
+import {
+  doc,
+  setDoc,
+  collection,
+  query,
+  where,
+  getDocs,
+  getDoc,
+  serverTimestamp,
+} from "firebase/firestore";
 import { auth, db } from "./config";
 
-/**
- * Sign in with email and password - simplified version
- */
-export const signInWithEmail = async (email, password) => {
-  try {
-    // Simple sign in without any checks
-    const userCredential = await signInWithEmailAndPassword(
-      auth,
-      email,
-      password
+// Verify pre-registration
+export async function checkPreRegistration(email) {
+  const preRegQuery = query(
+    collection(db, "preRegisteredUsers"),
+    where("email", "==", email),
+    where("status", "==", "active")
+  );
+
+  const snapshot = await getDocs(preRegQuery);
+
+  if (snapshot.empty) {
+    throw new Error(
+      "You need to be invited to register. Please contact your administrator."
     );
-
-    // Update last login
-    try {
-      await setDoc(
-        doc(db, "users", userCredential.user.uid),
-        {
-          lastLogin: serverTimestamp(),
-        },
-        { merge: true }
-      );
-    } catch (error) {
-      console.log("Error updating last login - ignoring", error);
-    }
-
-    return userCredential;
-  } catch (error) {
-    console.error("Sign in error:", error);
-    throw error;
   }
-};
 
-/**
- * Register a new user - simplified version
- */
-export const registerWithEmail = async (email, password) => {
-  try {
-    // Create user with Firebase Authentication - no pre-registration check
-    const userCredential = await createUserWithEmailAndPassword(
-      auth,
-      email,
-      password
+  return {
+    preRegData: snapshot.docs[0].data(),
+    preRegId: snapshot.docs[0].id,
+  };
+}
+
+// Handle user document creation/update
+export async function createUserDocument(user, role) {
+  await setDoc(doc(db, "users", user.uid), {
+    email: user.email,
+    displayName: user.displayName || user.email.split("@")[0],
+    photoURL: user.photoURL || null,
+    role: role,
+    createdAt: serverTimestamp(),
+    lastLogin: serverTimestamp(),
+  });
+}
+
+// Update pre-registration status
+export async function updatePreRegistration(preRegId, userId) {
+  await setDoc(
+    doc(db, "preRegisteredUsers", preRegId),
+    {
+      userId: userId,
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true }
+  );
+}
+
+// Register with email and password
+export async function register(email, password) {
+  // Check pre-registration first
+  const { preRegData, preRegId } = await checkPreRegistration(email);
+
+  // Create the user account
+  const userCredential = await createUserWithEmailAndPassword(
+    auth,
+    email,
+    password
+  );
+
+  // Create user document with correct role
+  await createUserDocument(userCredential.user, preRegData.role);
+
+  // Update pre-registration status
+  await updatePreRegistration(preRegId, userCredential.user.uid);
+
+  return userCredential;
+}
+
+// Sign in with email and password
+export async function loginWithEmail(email, password) {
+  const userCredential = await signInWithEmailAndPassword(
+    auth,
+    email,
+    password
+  );
+
+  // Update last login time
+  await setDoc(
+    doc(db, "users", userCredential.user.uid),
+    {
+      lastLogin: serverTimestamp(),
+    },
+    { merge: true }
+  );
+
+  return userCredential;
+}
+
+// Sign in with Google
+export async function loginWithGoogle() {
+  const provider = new GoogleAuthProvider();
+  const userCredential = await signInWithPopup(auth, provider);
+  const user = userCredential.user;
+
+  // Check if this is first login (registration)
+  const userDoc = await getDoc(doc(db, "users", user.uid));
+
+  if (!userDoc.exists()) {
+    // First time login - treat as registration
+    const { preRegData, preRegId } = await checkPreRegistration(user.email);
+
+    // Create user document with correct role
+    await createUserDocument(user, preRegData.role);
+
+    // Update pre-registration status
+    await updatePreRegistration(preRegId, user.uid);
+  } else {
+    // Just update last login time
+    await setDoc(
+      doc(db, "users", user.uid),
+      {
+        lastLogin: serverTimestamp(),
+      },
+      { merge: true }
     );
-
-    // Create basic user document
-    try {
-      await setDoc(doc(db, "users", userCredential.user.uid), {
-        email: userCredential.user.email,
-        displayName: email.split("@")[0],
-        createdAt: serverTimestamp(),
-        role: "user",
-      });
-    } catch (error) {
-      console.log("Error creating user document - ignoring", error);
-    }
-
-    return userCredential;
-  } catch (error) {
-    console.error("Registration error:", error);
-    throw error;
   }
-};
 
-/**
- * Sign in with Google - simplified version
- */
-export const signInWithGoogle = async () => {
-  try {
-    const provider = new GoogleAuthProvider();
-    const userCredential = await signInWithPopup(auth, provider);
+  return userCredential;
+}
 
-    // Create or update user document
-    try {
-      await setDoc(
-        doc(db, "users", userCredential.user.uid),
-        {
-          email: userCredential.user.email,
-          displayName:
-            userCredential.user.displayName ||
-            userCredential.user.email.split("@")[0],
-          photoURL: userCredential.user.photoURL,
-          lastLogin: serverTimestamp(),
-        },
-        { merge: true }
-      );
-    } catch (error) {
-      console.log("Error updating user document - ignoring", error);
-    }
+// Sign out
+export async function logout() {
+  return await firebaseSignOut(auth);
+}
 
-    return userCredential;
-  } catch (error) {
-    console.error("Google sign in error:", error);
-    throw error;
-  }
-};
+// Format Firebase auth errors for display
+export function formatAuthError(errorCode) {
+  const errorMap = {
+    "auth/user-not-found": "No account found with this email address",
+    "auth/wrong-password": "Incorrect password",
+    "auth/invalid-email": "Invalid email address format",
+    "auth/weak-password": "Password is too weak",
+    "auth/email-already-in-use": "This email is already registered",
+    "auth/popup-closed-by-user": "Sign in was canceled",
+    "auth/operation-not-allowed": "This sign-in method is not allowed",
+    "auth/invalid-credential": "The credential is malformed or expired",
+  };
 
-/**
- * Sign out
- */
-export const signOut = async () => {
-  try {
-    await firebaseSignOut(auth);
-  } catch (error) {
-    console.error("Sign out error:", error);
-    throw error;
-  }
-};
-
-/**
- * Format Firebase auth error messages
- */
-export const formatAuthError = (errorCode) => {
-  switch (errorCode) {
-    case "auth/user-not-found":
-      return "No account found with this email address";
-    case "auth/wrong-password":
-      return "Incorrect password";
-    case "auth/invalid-email":
-      return "Invalid email address format";
-    case "auth/weak-password":
-      return "Password is too weak";
-    case "auth/email-already-in-use":
-      return "This email is already registered";
-    case "auth/popup-closed-by-user":
-      return "Sign in was canceled";
-    default:
-      return "An error occurred during authentication";
-  }
-};
-
-export default auth;
+  return errorMap[errorCode] || "An error occurred during authentication";
+}
