@@ -6,6 +6,7 @@ import {
   doc,
   getDoc,
   arrayUnion,
+  onSnapshot,
 } from "firebase/firestore";
 import { auth, db } from "./config";
 
@@ -106,6 +107,35 @@ export async function addComment(contactId, commentText) {
     console.error("Error adding comment:", error);
     throw error;
   }
+}
+
+export function subscribeToContact(contactId, callback) {
+  if (!contactId) {
+    console.error("Contact ID is required for subscription");
+    return () => {}; // Return empty unsubscribe function
+  }
+  
+  const contactRef = doc(db, "contacts", contactId);
+  console.log(`Setting up listener for contact: ${contactId}`);
+  
+  return onSnapshot(
+    contactRef, 
+    (docSnapshot) => {
+      if (docSnapshot.exists()) {
+        const contactData = {
+          id: docSnapshot.id,
+          ...docSnapshot.data()
+        };
+        callback(contactData);
+      } else {
+        console.log(`Contact ${contactId} does not exist`);
+        callback(null);
+      }
+    },
+    (error) => {
+      console.error("Error listening to contact:", error);
+    }
+  );
 }
 
 export async function syncContacts(contacts) {

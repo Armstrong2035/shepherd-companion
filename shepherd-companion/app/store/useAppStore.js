@@ -21,7 +21,40 @@ const useAppStore = create(
         set({ assignedToMe: assignedContacts });
       },
 
-      // ✅ Subscribe to Firestore in real time (Contacts)
+      // Subscribe to the user document to get real-time assigned contacts updates
+      subscribeToUserDocument: () => {
+        const user = auth.currentUser;
+        if (!user) return () => {}; // Return empty function if no user
+
+        const userDocRef = doc(db, "users", user.uid);
+
+        return onSnapshot(userDocRef, (docSnapshot) => {
+          if (!docSnapshot.exists()) return;
+
+          const userData = docSnapshot.data();
+          const assignedContactIds = userData.assignedToMe || [];
+
+          // Get the latest contacts
+          const { contacts } = get();
+
+          if (contacts.length > 0 && assignedContactIds.length > 0) {
+            // Convert all IDs to strings for consistent comparison
+            const stringIds = assignedContactIds.map((id) => String(id));
+
+            // Convert IDs to full contact objects
+            const assignedContacts = contacts.filter((contact) =>
+              stringIds.includes(String(contact.id))
+            );
+            
+            set({ assignedToMe: assignedContacts });
+          } else {
+            // Store the IDs for now
+            set({ assignedToMe: assignedContactIds });
+          }
+        });
+      },
+
+      // Subscribe to Firestore in real time (Contacts)
       subscribeToContacts: () => {
         const contactsCollection = collection(db, "contacts");
         return onSnapshot(contactsCollection, (snapshot) => {
@@ -30,6 +63,27 @@ const useAppStore = create(
             ...doc.data(),
           }));
           set({ contacts: updatedContacts });
+
+          // Update assigned contacts if we have IDs but not full objects
+          const { assignedToMe } = get();
+          if (assignedToMe && assignedToMe.length > 0) {
+            // Check if assignedToMe contains IDs (strings) rather than objects
+            const isIds = typeof assignedToMe[0] === "string";
+
+            if (isIds) {
+              // Convert all IDs to strings for consistent comparison
+              const stringIds = assignedToMe.map((id) => String(id));
+
+              // Convert IDs to full objects using the updated contacts
+              const assignedContacts = updatedContacts.filter((contact) =>
+                stringIds.includes(String(contact.id))
+              );
+
+              if (assignedContacts.length > 0) {
+                set({ assignedToMe: assignedContacts });
+              }
+            }
+          }
         });
       },
 
@@ -46,7 +100,23 @@ const useAppStore = create(
 
           const userData = userDoc.data();
           const assignedContactIds = userData.assignedToMe || [];
-
+          
+          // Get the latest contacts to convert IDs to full objects
+          const { contacts } = get();
+          if (contacts.length > 0 && assignedContactIds.length > 0) {
+            // Convert all IDs to strings for consistent comparison
+            const stringIds = assignedContactIds.map(id => String(id));
+            
+            // Convert IDs to full objects
+            const assignedContacts = contacts.filter(contact => 
+              stringIds.includes(String(contact.id))
+            );
+            
+            set({ assignedToMe: assignedContacts });
+            return assignedContacts;
+          }
+          
+          // Store IDs if contacts aren't available yet
           set({ assignedToMe: assignedContactIds });
           return assignedContactIds;
         } catch (error) {

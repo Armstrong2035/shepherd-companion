@@ -1,13 +1,8 @@
 import { useState } from "react";
-import useAppStore from "@/app/store/useAppStore";
 import {
   Box,
   Typography,
-  List,
-  ListItem,
-  ListItemText,
   Paper,
-  Divider,
   Accordion,
   AccordionSummary,
   AccordionDetails,
@@ -23,8 +18,6 @@ export default function AssignedContacts({ contacts }) {
   const handleContactExpand = (contactId) => {
     setExpandedContact(expandedContact === contactId ? null : contactId);
   };
-
-  console.log("AssignedContacts component:", contacts);
 
   return (
     <Box sx={{ padding: 2 }}>

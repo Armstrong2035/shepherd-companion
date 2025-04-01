@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { 
   Box, 
   Typography, 
@@ -13,12 +13,38 @@ import {
   CardContent,
   CircularProgress
 } from '@mui/material';
-import { addComment } from '@/firebase/contacts';
+import { addComment, subscribeToContact } from '@/firebase/contacts';
 
 export default function ContactActivities({ contact }) {
   const [comment, setComment] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState(null);
+  const [currentContact, setCurrentContact] = useState(contact);
+
+  // Subscribe to real-time updates for this contact
+  // Initialize currentContact with the provided contact
+  useEffect(() => {
+    setCurrentContact(contact);
+  }, [contact]);
+
+  // Subscribe to real-time updates for this contact
+  useEffect(() => {
+    if (!contact || !contact.id) return;
+    
+    console.log(`Setting up subscription for contact ${contact.id}`);
+    const unsubscribe = subscribeToContact(contact.id, (updatedContact) => {
+      if (updatedContact) {
+        console.log('Contact updated:', updatedContact.activities?.length);
+        setCurrentContact(updatedContact);
+      }
+    });
+    
+    // Cleanup subscription on unmount
+    return () => {
+      console.log(`Cleaning up subscription for contact ${contact.id}`);
+      unsubscribe();
+    };
+  }, [contact?.id]);
 
   // Format timestamp to readable date
   const formatDate = (timestamp) => {
@@ -60,8 +86,8 @@ export default function ContactActivities({ contact }) {
     }
   };
 
-  // Get and sort activities
-  const activities = [...(contact.activities || [])].sort((a, b) => {
+  // Get and sort activities from the current (real-time updated) contact
+  const activities = [...(currentContact?.activities || [])].sort((a, b) => {
     // Convert timestamps to Date objects for comparison
     const dateA = a.timestamp ? new Date(a.timestamp) : new Date(0);
     const dateB = b.timestamp ? new Date(b.timestamp) : new Date(0);
