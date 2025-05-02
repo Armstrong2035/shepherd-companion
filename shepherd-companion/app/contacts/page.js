@@ -1,10 +1,11 @@
 "use client";
 import useAppStore from "../store/useAppStore";
-import { Box, Button } from "@mui/material";
+import { Box, CircularProgress } from "@mui/material";
 import { useEffect, useState } from "react";
 import AssignedContacts from "../components/contacts/AssignedContacts";
 import { auth, db } from "@/firebase/config";
 import { doc, getDoc } from "firebase/firestore";
+import MainLayout from "../components/layouts/MainLayout";
 
 export default function Contacts() {
   const {
@@ -70,14 +71,18 @@ export default function Contacts() {
       setAssignedContacts([]);
     }
   }, [contacts, assignedToMe]);
-
-  // Keep the app clean in production by removing console logs
   
   return (
-    <Box sx={{ padding: 2 }}>
-      <AssignedContacts
-        contacts={assignedContacts.length > 0 ? assignedContacts : assignedToMe}
-      />
-    </Box>
+    <MainLayout>
+      {loading ? (
+        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '60vh' }}>
+          <CircularProgress />
+        </Box>
+      ) : (
+        <AssignedContacts
+          contacts={assignedContacts.length > 0 ? assignedContacts : assignedToMe}
+        />
+      )}
+    </MainLayout>
   );
 }

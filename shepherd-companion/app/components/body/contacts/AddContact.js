@@ -1,6 +1,6 @@
 // components/contacts/AddContact.js
 import { useState } from "react";
-import { Box, Typography, Paper } from "@mui/material";
+import { Box, Typography, Paper, Divider } from "@mui/material";
 import ContactForm from "./ContactForm";
 import OfflineManager from "./OfflineManager";
 import StatusNotification from "./StatusNotification";
@@ -100,11 +100,7 @@ export default function AddContact() {
   };
 
   return (
-    <Paper elevation={0} sx={{ p: 3 }}>
-      <Typography variant="h6" gutterBottom>
-        Add New Contact
-      </Typography>
-
+    <Box>
       <OfflineManager onSync={handleSync}>
         {({ isOnline, saveOffline }) => (
           <>
@@ -114,7 +110,7 @@ export default function AddContact() {
               onClose={resetStatus}
             />
 
-            <Box>
+            <Box sx={{ backgroundColor: "white", p: 3 }}>
               <ContactForm
                 onSubmit={(formData) => {
                   if (!isOnline) {
@@ -133,6 +129,6 @@ export default function AddContact() {
           </>
         )}
       </OfflineManager>
-    </Paper>
+    </Box>
   );
 }

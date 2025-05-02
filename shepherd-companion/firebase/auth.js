@@ -15,10 +15,16 @@ import {
   getDocs,
   getDoc,
   serverTimestamp,
+  updateDoc,
 } from "firebase/firestore";
-import { auth, db } from "./config";
+import { auth } from "./config";
+import { db } from "./config";
 
-// Verify pre-registration
+/**
+ * Verify pre-registration status
+ * @param {string} email - User's email
+ * @returns {Promise<Object>} - Pre-registration data
+ */
 export async function checkPreRegistration(email) {
   const preRegQuery = query(
     collection(db, "preRegisteredUsers"),
@@ -40,31 +46,71 @@ export async function checkPreRegistration(email) {
   };
 }
 
-// Handle user document creation/update
-export async function createUserDocument(user, role) {
-  await setDoc(doc(db, "users", user.uid), {
-    email: user.email,
-    displayName: user.displayName || user.email.split("@")[0],
-    photoURL: user.photoURL || null,
-    role: role,
-    createdAt: serverTimestamp(),
-    lastLogin: serverTimestamp(),
-  });
-}
-
-// Update pre-registration status
-export async function updatePreRegistration(preRegId, userId) {
+/**
+ * Create or update user document in Firestore
+ * @param {Object} user - Firebase Auth user object
+ * @param {string} role - User role
+ * @param {string} workspaceId - Workspace ID
+ */
+export async function createOrUpdateUserDocument(user, role, workspaceId) {
   await setDoc(
-    doc(db, "preRegisteredUsers", preRegId),
+    doc(db, "users", user.uid),
     {
-      userId: userId,
-      updatedAt: serverTimestamp(),
+      email: user.email,
+      displayName: user.displayName || user.email.split("@")[0],
+      photoURL: user.photoURL || null,
+      role: role,
+      workspaces: [
+        {
+          workspaceId: workspaceId,
+          role: role,
+        },
+      ],
+      createdAt: serverTimestamp(),
+      lastLogin: serverTimestamp(),
     },
     { merge: true }
   );
 }
 
-// Register with email and password
+/**
+ * Update pre-registration status
+ * @param {string} preRegId - Pre-registration document ID
+ * @param {string} userId - Firebase Auth UID
+ */
+export async function updatePreRegistrationStatus(preRegId, userId) {
+  await updateDoc(doc(db, "preRegisteredUsers", preRegId), {
+    status: "registered",
+    userId: userId,
+    updatedAt: serverTimestamp(),
+  });
+
+  // Also check if there's a matching invitation to update
+  const invitationQuery = query(
+    collection(db, "invitations"),
+    where("email", "==", auth.currentUser.email),
+    where("status", "==", "pending")
+  );
+
+  const invitationSnapshot = await getDocs(invitationQuery);
+
+  if (!invitationSnapshot.empty) {
+    const invitationDoc = invitationSnapshot.docs[0];
+    await updateDoc(invitationDoc.ref, {
+      status: "accepted",
+      acceptedAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+      userId: userId,
+    });
+  }
+}
+
+/**
+ * Register with email and password
+ * @param {string} email - User email
+ * @param {string} password - User password
+ * @returns {Promise<Object>} - User credential
+ */
 export async function register(email, password) {
   // Check pre-registration first
   const { preRegData, preRegId } = await checkPreRegistration(email);
@@ -77,15 +123,24 @@ export async function register(email, password) {
   );
 
   // Create user document with correct role
-  await createUserDocument(userCredential.user, preRegData.role);
+  await createOrUpdateUserDocument(
+    userCredential.user,
+    preRegData.role,
+    preRegData.workspaceId
+  );
 
   // Update pre-registration status
-  await updatePreRegistration(preRegId, userCredential.user.uid);
+  await updatePreRegistrationStatus(preRegId, userCredential.user.uid);
 
   return userCredential;
 }
 
-// Sign in with email and password
+/**
+ * Sign in with email and password
+ * @param {string} email - User email
+ * @param {string} password - User password
+ * @returns {Promise<Object>} - User credential
+ */
 export async function loginWithEmail(email, password) {
   const userCredential = await signInWithEmailAndPassword(
     auth,
@@ -105,7 +160,10 @@ export async function loginWithEmail(email, password) {
   return userCredential;
 }
 
-// Sign in with Google
+/**
+ * Sign in with Google
+ * @returns {Promise<Object>} - User credential
+ */
 export async function loginWithGoogle() {
   const provider = new GoogleAuthProvider();
   const userCredential = await signInWithPopup(auth, provider);
@@ -116,13 +174,25 @@ export async function loginWithGoogle() {
 
   if (!userDoc.exists()) {
     // First time login - treat as registration
-    const { preRegData, preRegId } = await checkPreRegistration(user.email);
+    try {
+      const { preRegData, preRegId } = await checkPreRegistration(user.email);
 
-    // Create user document with correct role
-    await createUserDocument(user, preRegData.role);
+      // Create user document with correct role
+      await createOrUpdateUserDocument(
+        user,
+        preRegData.role,
+        preRegData.workspaceId
+      );
 
-    // Update pre-registration status
-    await updatePreRegistration(preRegId, user.uid);
+      // Update pre-registration status
+      await updatePreRegistrationStatus(preRegId, user.uid);
+    } catch (error) {
+      // If not pre-registered, sign out and throw error
+      await firebaseSignOut(auth);
+      throw new Error(
+        "You need to be invited to register. Please contact your administrator."
+      );
+    }
   } else {
     // Just update last login time
     await setDoc(
@@ -137,12 +207,19 @@ export async function loginWithGoogle() {
   return userCredential;
 }
 
-// Sign out
+/**
+ * Sign out
+ * @returns {Promise<void>}
+ */
 export async function logout() {
   return await firebaseSignOut(auth);
 }
 
-// Format Firebase auth errors for display
+/**
+ * Format Firebase auth errors for display
+ * @param {string} errorCode - Firebase error code
+ * @returns {string} - User-friendly error message
+ */
 export function formatAuthError(errorCode) {
   const errorMap = {
     "auth/user-not-found": "No account found with this email address",
